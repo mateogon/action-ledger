@@ -2,6 +2,16 @@
 
 The MCP server exposes the same operations as the CLI and calls `packages/core` directly.
 
+## Agent Policy
+
+Action Ledger is for durable follow-up work, not every note or document.
+
+Agents should suggest an Action Ledger task when a session produces a consolidated study, study plan, research project, curated watch/read list, or artifact worth revisiting with a clear next step.
+
+Agents should not create tasks automatically unless the user explicitly asks to create, register, track, remind, or schedule it. When suggesting a task, include title, area, suggested status, due date if obvious, and source link.
+
+Use `append_task_log` to record meaningful progress, decisions, feedback, or changed context on an existing task.
+
 ## Tools
 
 - `init_workspace`

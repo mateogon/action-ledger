@@ -196,6 +196,8 @@ Main MCP tools:
 
 The most important agent behavior is to use `append_task_log` as work evolves. That turns a task from a static todo into an auditable action record.
 
+The MCP server also ships with agent instructions: agents should suggest tasks for substantial study/research outputs, curated lists, or plans worth revisiting, but should not create tasks automatically unless the user explicitly asks to create, register, track, remind, or schedule them.
+
 See [docs/mcp-tools.md](docs/mcp-tools.md) for tool names, resources, prompts, and safety notes.
 
 ## Desktop App

@@ -4,6 +4,15 @@ import { z } from "zod";
 import { getProject, getTask, listProjects, listTasks, loadConfig } from "@action-ledger/core";
 import { createToolHandlers } from "./handlers.js";
 
+const ACTION_LEDGER_INSTRUCTIONS = [
+  "Action Ledger is for durable follow-up work, not every note or document.",
+  "Suggest an Action Ledger task when a session produces a consolidated study, study plan, research project, curated watch/read list, or artifact worth revisiting with a clear next step.",
+  "Do not create tasks automatically unless the user explicitly asks to create, register, track, remind, or schedule it.",
+  "When suggesting a task, include a title, area, suggested status, due date if obvious, and source link.",
+  "Use append_task_log to record meaningful progress, decisions, feedback, or changed context on existing tasks.",
+  "Use source_links to reference files or URLs; do not copy private source content into the task unless the user asks."
+].join(" ");
+
 function textResult(value: unknown) {
   return {
     content: [
@@ -16,10 +25,15 @@ function textResult(value: unknown) {
 }
 
 export function createCommandCenterMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "action-ledger",
-    version: "0.1.0"
-  });
+  const server = new McpServer(
+    {
+      name: "action-ledger",
+      version: "0.1.0"
+    },
+    {
+      instructions: ACTION_LEDGER_INSTRUCTIONS
+    }
+  );
   const handlers = createToolHandlers();
 
   server.tool(
@@ -39,6 +53,7 @@ export function createCommandCenterMcpServer(): McpServer {
 
   server.tool(
     "create_task",
+    "Create an Action Ledger task only when the user explicitly asks to create, register, track, remind, or schedule it. If the user only produced a substantial study, plan, curated list, or research artifact, suggest a task first instead of creating it.",
     {
       data_dir: z.string().optional(),
       title: z.string(),
@@ -84,6 +99,7 @@ export function createCommandCenterMcpServer(): McpServer {
   );
   server.tool(
     "create_project",
+    "Create an Action Ledger project only when the user explicitly asks to register or track a durable project. For substantial research or study outputs, suggest the project first unless creation was requested.",
     {
       data_dir: z.string().optional(),
       title: z.string(),
@@ -105,6 +121,7 @@ export function createCommandCenterMcpServer(): McpServer {
   );
   server.tool(
     "append_task_log",
+    "Append meaningful progress, decisions, feedback, or changed context to an existing task. Prefer this over creating duplicate tasks when the follow-up already exists.",
     {
       data_dir: z.string().optional(),
       id: z.string(),
