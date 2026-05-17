@@ -127,7 +127,43 @@ Then run the MCP server:
 npm run mcp
 ```
 
-Or configure an agent to launch it directly:
+### Codex MCP Setup
+
+Recommended setup with Codex CLI:
+
+```bash
+codex mcp add action-ledger -- node /absolute/path/to/action-ledger/packages/mcp-server/dist/bin/acc-mcp.js
+codex mcp list
+```
+
+For this local checkout:
+
+```bash
+codex mcp add action-ledger -- node /Users/mateo/Developer/agent-command-center/packages/mcp-server/dist/bin/acc-mcp.js
+codex mcp list
+```
+
+Or add this manually to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.action-ledger]
+command = "node"
+args = ["/absolute/path/to/action-ledger/packages/mcp-server/dist/bin/acc-mcp.js"]
+```
+
+For this local checkout, the path is:
+
+```toml
+[mcp_servers.action-ledger]
+command = "node"
+args = ["/Users/mateo/Developer/agent-command-center/packages/mcp-server/dist/bin/acc-mcp.js"]
+```
+
+Restart Codex after editing the config so the MCP server is loaded. Once loaded, ask Codex to use the `action-ledger` MCP tools to create tasks, list tasks, move tasks, link sources, or append task logs.
+
+### Claude Desktop MCP Setup
+
+For Claude Desktop or other JSON-based MCP clients, configure the server like this:
 
 ```json
 {
