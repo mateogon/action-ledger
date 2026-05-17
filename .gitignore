@@ -1,0 +1,13 @@
+node_modules/
+dist/
+target/
+coverage/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+
+# Private command center data should live outside the repo.
+Agent Command Center/
+Action Ledger/

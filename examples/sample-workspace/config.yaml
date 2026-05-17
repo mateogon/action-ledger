@@ -1,0 +1,6 @@
+data_dir: ./examples/sample-workspace
+reminders:
+  enabled: false
+  list_name: Action Ledger Demo
+desktop:
+  autostart: false

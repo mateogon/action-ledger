@@ -1,0 +1,28 @@
+{
+  "name": "@action-ledger/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "action-ledger": "dist/bin/acc.js",
+    "acc": "dist/bin/acc.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@action-ledger/core": "0.1.0",
+    "@action-ledger/reminders-sync": "0.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

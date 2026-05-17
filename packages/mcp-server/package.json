@@ -1,0 +1,30 @@
+{
+  "name": "@action-ledger/mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "action-ledger-mcp": "dist/bin/acc-mcp.js",
+    "acc-mcp": "dist/bin/acc-mcp.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@action-ledger/core": "0.1.0",
+    "@action-ledger/reminders-sync": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.21.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}
