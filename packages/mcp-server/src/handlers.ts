@@ -1,18 +1,23 @@
 import {
   appendTaskLog,
   archiveTask,
+  claimTask,
   completeTask,
   createProject,
   createTask,
   deleteTask,
+  getNextActions,
   getProject,
   getTask,
+  getWorkspaceSummary,
   initWorkspace,
   linkTaskSource,
   listProjects,
   listTasks,
   loadConfig,
   moveTask,
+  releaseTask,
+  searchTasks,
   type Area,
   type TaskPriority,
   type TaskStatus
@@ -31,6 +36,10 @@ async function resolveDataDir(args: ToolArgs): Promise<string> {
 
 export function serializableTask(task: Awaited<ReturnType<typeof getTask>>): Record<string, unknown> {
   return { ...task.metadata, path: task.path, body: task.body };
+}
+
+export function compactSerializableTask(task: Awaited<ReturnType<typeof searchTasks>>[number]): Record<string, unknown> {
+  return { ...task };
 }
 
 export function serializableProject(project: Awaited<ReturnType<typeof createProject>>): Record<string, unknown> {
@@ -82,6 +91,40 @@ export function createToolHandlers() {
         dueBefore: typeof args.due_before === "string" ? args.due_before : undefined
       });
       return tasks.map(serializableTask);
+    },
+
+    async search_tasks(args: ToolArgs) {
+      const dataDir = await resolveDataDir(args);
+      return (
+        await searchTasks(dataDir, {
+          query: typeof args.query === "string" ? args.query : "",
+          status: args.status as TaskStatus | undefined,
+          area: args.area as Area | undefined,
+          project: typeof args.project === "string" ? args.project : undefined,
+          dueBefore: typeof args.due_before === "string" ? args.due_before : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined
+        })
+      ).map(compactSerializableTask);
+    },
+
+    async get_next_actions(args: ToolArgs) {
+      const dataDir = await resolveDataDir(args);
+      return (
+        await getNextActions(dataDir, {
+          area: args.area as Area | undefined,
+          project: typeof args.project === "string" ? args.project : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined
+        })
+      ).map(compactSerializableTask);
+    },
+
+    async get_workspace_summary(args: ToolArgs) {
+      const dataDir = await resolveDataDir(args);
+      return getWorkspaceSummary(dataDir, {
+        today: typeof args.today === "string" ? args.today : undefined,
+        dueWithinDays: typeof args.due_within_days === "number" ? args.due_within_days : undefined,
+        limit: typeof args.limit === "number" ? args.limit : undefined
+      });
     },
 
     async get_task(args: ToolArgs) {
@@ -144,6 +187,27 @@ export function createToolHandlers() {
           message: String(args.message ?? ""),
           author: typeof args.author === "string" ? args.author : "Codex",
           at: typeof args.at === "string" ? args.at : undefined
+        })
+      );
+    },
+
+    async claim_task(args: ToolArgs) {
+      const dataDir = await resolveDataDir(args);
+      return serializableTask(
+        await claimTask(dataDir, String(args.id ?? ""), {
+          owner: typeof args.owner === "string" ? args.owner : "Codex",
+          at: typeof args.at === "string" ? args.at : undefined,
+          force: args.force === true
+        })
+      );
+    },
+
+    async release_task(args: ToolArgs) {
+      const dataDir = await resolveDataDir(args);
+      return serializableTask(
+        await releaseTask(dataDir, String(args.id ?? ""), {
+          owner: typeof args.owner === "string" ? args.owner : undefined,
+          force: args.force === true
         })
       );
     },

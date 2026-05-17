@@ -9,7 +9,9 @@ export function taskSummary(task: TaskRecord): Record<string, unknown> {
     status: task.metadata.status,
     priority: task.metadata.priority,
     due: task.metadata.due,
+    tags: task.metadata.tags,
     reminder: task.metadata.reminder,
+    claim: task.metadata.claim,
     source_links: task.metadata.source_links,
     path: task.path
   };

@@ -106,6 +106,57 @@ describe("MCP tool handlers", () => {
     });
   });
 
+  it("searches tasks and returns compact summary and next actions", async () => {
+    await withTempDir(async (dir) => {
+      const handlers = createToolHandlers();
+      await handlers.init_workspace({ data_dir: dir, write_global: false });
+      await handlers.create_task({
+        data_dir: dir,
+        title: "Communication memo",
+        area: "learning",
+        status: "next",
+        due: "2026-05-24",
+        body: "Explain a complex system"
+      });
+      await handlers.create_task({ data_dir: dir, title: "Admin cleanup", area: "admin", status: "inbox" });
+
+      const matches = await handlers.search_tasks({ data_dir: dir, query: "complex system" });
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toMatchObject({ title: "Communication memo", status: "next" });
+      expect(matches[0]).not.toHaveProperty("body");
+
+      const next = await handlers.get_next_actions({ data_dir: dir, area: "learning" });
+      expect(next.map((task) => task.title)).toEqual(["Communication memo"]);
+
+      const summary = await handlers.get_workspace_summary({ data_dir: dir, today: "2026-05-17" });
+      expect(summary).toMatchObject({ total_tasks: 2, open_tasks: 2 });
+      expect(summary.due_soon[0]).not.toHaveProperty("body");
+    });
+  });
+
+  it("claims and releases tasks for agent coordination", async () => {
+    await withTempDir(async (dir) => {
+      const handlers = createToolHandlers();
+      await handlers.init_workspace({ data_dir: dir, write_global: false });
+      const task = await handlers.create_task({ data_dir: dir, title: "Claim target", status: "next" });
+
+      const claimed = await handlers.claim_task({
+        data_dir: dir,
+        id: task.id,
+        owner: "Codex",
+        at: "2026-05-17T10:00:00.000Z"
+      });
+      expect(claimed.claim).toEqual({ owner: "Codex", at: "2026-05-17T10:00:00.000Z" });
+
+      await expect(handlers.claim_task({ data_dir: dir, id: task.id, owner: "Claude" })).rejects.toMatchObject({
+        code: "TASK_ALREADY_CLAIMED"
+      });
+
+      const released = await handlers.release_task({ data_dir: dir, id: task.id });
+      expect(released.claim).toBeNull();
+    });
+  });
+
   it("sync_reminders returns dry-run actions", async () => {
     await withTempDir(async (dir) => {
       const handlers = createToolHandlers();

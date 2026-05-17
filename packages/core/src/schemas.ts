@@ -10,6 +10,14 @@ export const ReminderSchema = z.object({
   apple_id: z.string().nullable().default(null)
 });
 
+export const TaskClaimSchema = z
+  .object({
+    owner: z.string().min(1),
+    at: z.string().min(1)
+  })
+  .nullable()
+  .default(null);
+
 export const TaskFrontmatterSchema = z.object({
   schema_version: z.number().int().positive().default(1),
   id: z.string().min(1),
@@ -21,6 +29,7 @@ export const TaskFrontmatterSchema = z.object({
   due: z.string().nullable().default(null),
   tags: z.array(z.string()).default([]),
   reminder: ReminderSchema.default({ enabled: false, apple_id: null }),
+  claim: TaskClaimSchema,
   source_links: z.array(z.string()).default([]),
   created_at: z.string().min(1),
   updated_at: z.string().min(1),

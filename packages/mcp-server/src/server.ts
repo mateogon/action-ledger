@@ -82,6 +82,45 @@ export function createCommandCenterMcpServer(): McpServer {
     async (args) => textResult(await handlers.list_tasks(args))
   );
 
+  server.tool(
+    "search_tasks",
+    "Search tasks and return compact task records without full bodies. Use this before get_task when orienting by topic, source, tag, project, or body text.",
+    {
+      data_dir: z.string().optional(),
+      query: z.string().optional(),
+      status: z.string().optional(),
+      area: z.string().optional(),
+      project: z.string().optional(),
+      due_before: z.string().optional(),
+      limit: z.number().int().positive().optional()
+    },
+    async (args) => textResult(await handlers.search_tasks(args))
+  );
+
+  server.tool(
+    "get_next_actions",
+    "Return compact open tasks ordered for agent attention. Prefer this over list_tasks when the user asks what to do next.",
+    {
+      data_dir: z.string().optional(),
+      area: z.string().optional(),
+      project: z.string().optional(),
+      limit: z.number().int().positive().optional()
+    },
+    async (args) => textResult(await handlers.get_next_actions(args))
+  );
+
+  server.tool(
+    "get_workspace_summary",
+    "Return compact workspace counts, due-soon tasks, and next actions without full task bodies.",
+    {
+      data_dir: z.string().optional(),
+      today: z.string().optional(),
+      due_within_days: z.number().int().nonnegative().optional(),
+      limit: z.number().int().positive().optional()
+    },
+    async (args) => textResult(await handlers.get_workspace_summary(args))
+  );
+
   server.tool("get_task", { data_dir: z.string().optional(), id: z.string() }, async (args) =>
     textResult(await handlers.get_task(args))
   );
@@ -130,6 +169,29 @@ export function createCommandCenterMcpServer(): McpServer {
       at: z.string().optional()
     },
     async (args) => textResult(await handlers.append_task_log(args))
+  );
+  server.tool(
+    "claim_task",
+    "Mark a task as claimed by an agent/session. This is a lightweight coordination hint, not a hard lock. Fails if another owner has claimed it unless force=true.",
+    {
+      data_dir: z.string().optional(),
+      id: z.string(),
+      owner: z.string().optional(),
+      at: z.string().optional(),
+      force: z.boolean().optional()
+    },
+    async (args) => textResult(await handlers.claim_task(args))
+  );
+  server.tool(
+    "release_task",
+    "Clear a task claim when work is complete, paused, or handed off.",
+    {
+      data_dir: z.string().optional(),
+      id: z.string(),
+      owner: z.string().optional(),
+      force: z.boolean().optional()
+    },
+    async (args) => textResult(await handlers.release_task(args))
   );
   server.tool(
     "sync_reminders",

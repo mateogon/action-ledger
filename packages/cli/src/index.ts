@@ -1,17 +1,26 @@
 import { execFile } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   appendTaskLog,
   archiveTask,
+  claimTask,
   completeTask,
   createProject,
   createTask,
   deleteTask,
+  getNextActions,
   getTask,
+  getWorkspaceSummary,
   initWorkspace,
   listProjects,
   listTasks,
   loadConfig,
   moveTask,
+  releaseTask,
+  searchTasks,
   writeGlobalConfig,
   type Area,
   type WorkspaceConfig,
@@ -70,13 +79,21 @@ export async function runCli(args: string[], io: CliIO = {}): Promise<number> {
         configPath: flagString(flags, "config-path"),
         writeGlobal: !flagBool(flags, "no-global")
       });
+      const payload: Record<string, unknown> = {
+        data_dir: result.config.data_dir,
+        global_config: result.globalConfigPath,
+        workspace_config: result.workspaceConfigPath
+      };
+      const mcpTarget = flagString(flags, "mcp");
+      if (mcpTarget) {
+        if (mcpTarget !== "codex") throw new Error(`Unsupported MCP target: ${mcpTarget}`);
+        payload.mcp = {
+          codex: await codexMcpSetup({ install: flagBool(flags, "install-mcp") })
+        };
+      }
       writeOutput(
         io,
-        {
-          data_dir: result.config.data_dir,
-          global_config: result.globalConfigPath,
-          workspace_config: result.workspaceConfigPath
-        },
+        payload,
         json
       );
       return 0;
@@ -96,6 +113,34 @@ export async function runCli(args: string[], io: CliIO = {}): Promise<number> {
 
     if (domain === "open") {
       return await handleOpen(flags, io, json);
+    }
+
+    if (domain === "summary") {
+      const dataDir = await resolveDataDir(flags);
+      writeOutput(
+        io,
+        await getWorkspaceSummary(dataDir, {
+          today: flagString(flags, "today"),
+          dueWithinDays: flagString(flags, "due-within-days") ? Number(flagString(flags, "due-within-days")) : undefined,
+          limit: flagString(flags, "limit") ? Number(flagString(flags, "limit")) : undefined
+        }),
+        json
+      );
+      return 0;
+    }
+
+    if (domain === "next") {
+      const dataDir = await resolveDataDir(flags);
+      writeOutput(
+        io,
+        await getNextActions(dataDir, {
+          area: flagString(flags, "area") as Area | undefined,
+          project: flagString(flags, "project"),
+          limit: flagString(flags, "limit") ? Number(flagString(flags, "limit")) : undefined
+        }),
+        json
+      );
+      return 0;
     }
 
     if (domain === "task") {
@@ -121,6 +166,50 @@ export async function runCli(args: string[], io: CliIO = {}): Promise<number> {
     }
     return 1;
   }
+}
+
+async function codexMcpSetup(options: { install: boolean }): Promise<Record<string, unknown>> {
+  const serverPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../mcp-server/dist/bin/acc-mcp.js");
+  const block = codexMcpBlock(serverPath);
+  const configPath = path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "config.toml");
+  if (!options.install) {
+    return {
+      installed: false,
+      config_path: configPath,
+      server_path: serverPath,
+      snippet: block.trim()
+    };
+  }
+
+  await mkdir(path.dirname(configPath), { recursive: true });
+  let current = "";
+  try {
+    current = await readFile(configPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const withoutExisting = current.replace(/(?:^|\n)\[mcp_servers\.action-ledger\]\n[\s\S]*?(?=\n\[[^\n]+\]|\s*$)/m, "").trimEnd();
+  const next = `${withoutExisting ? `${withoutExisting}\n\n` : ""}${block}`;
+  await writeFile(configPath, next, "utf8");
+  return {
+    installed: true,
+    config_path: configPath,
+    server_path: serverPath,
+    snippet: block.trim()
+  };
+}
+
+function codexMcpBlock(serverPath: string): string {
+  return [
+    "[mcp_servers.action-ledger]",
+    'command = "node"',
+    `args = ["${escapeTomlString(serverPath)}"]`,
+    ""
+  ].join("\n");
+}
+
+function escapeTomlString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 async function handleConfig(
@@ -247,6 +336,23 @@ async function handleTask(
     return 0;
   }
 
+  if (action === "search") {
+    const query = rest.join(" ").trim();
+    writeOutput(
+      io,
+      await searchTasks(dataDir, {
+        query,
+        status: flagString(flags, "status") as TaskStatus | undefined,
+        area: flagString(flags, "area") as Area | undefined,
+        project: flagString(flags, "project"),
+        dueBefore: flagString(flags, "due-before"),
+        limit: flagString(flags, "limit") ? Number(flagString(flags, "limit")) : undefined
+      }),
+      json
+    );
+    return 0;
+  }
+
   if (action === "show") {
     const id = rest[0];
     if (!id) throw new Error("Task id is required");
@@ -264,6 +370,39 @@ async function handleTask(
         await appendTaskLog(dataDir, id, {
           message,
           author: flagString(flags, "author") ?? "Codex"
+        })
+      ),
+      json
+    );
+    return 0;
+  }
+
+  if (action === "claim") {
+    const id = rest[0];
+    if (!id) throw new Error("Task id is required");
+    writeOutput(
+      io,
+      taskSummary(
+        await claimTask(dataDir, id, {
+          owner: flagString(flags, "owner") ?? "Codex",
+          at: flagString(flags, "at"),
+          force: flagBool(flags, "force")
+        })
+      ),
+      json
+    );
+    return 0;
+  }
+
+  if (action === "release") {
+    const id = rest[0];
+    if (!id) throw new Error("Task id is required");
+    writeOutput(
+      io,
+      taskSummary(
+        await releaseTask(dataDir, id, {
+          owner: flagString(flags, "owner"),
+          force: flagBool(flags, "force")
         })
       ),
       json
@@ -337,13 +476,19 @@ export function usage(): string {
     "",
     "Commands:",
     "  action-ledger init --data-dir <path>",
+    "  action-ledger init --data-dir <path> --mcp codex --install-mcp",
     "  action-ledger doctor",
     "  action-ledger config get",
     "  action-ledger config set data_dir <path>",
     "  action-ledger open",
+    "  action-ledger summary --json",
+    "  action-ledger next --area learning --json",
     "  action-ledger task add \"Title\" --area learning --status next --due 2026-05-24",
     "  action-ledger task list --status next --due-before 2026-05-31 --json",
+    "  action-ledger task search \"query\" --area learning --json",
     "  action-ledger task log <id> \"Added context\" --author Codex",
+    "  action-ledger task claim <id> --owner Codex",
+    "  action-ledger task release <id>",
     "  action-ledger task move <id> doing",
     "  action-ledger task complete <id>",
     "  action-ledger task archive <id>",

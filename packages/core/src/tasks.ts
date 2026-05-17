@@ -44,10 +44,63 @@ export interface TaskFilters {
   dueBefore?: string;
 }
 
+export interface TaskSearchOptions extends TaskFilters {
+  query?: string;
+  limit?: number;
+}
+
+export interface NextActionOptions {
+  area?: Area;
+  project?: string;
+  limit?: number;
+}
+
+export interface WorkspaceSummaryOptions {
+  today?: string;
+  dueWithinDays?: number;
+  limit?: number;
+}
+
 export interface TaskLogInput {
   message: string;
   author?: string;
   at?: string;
+}
+
+export interface TaskClaimInput {
+  owner: string;
+  at?: string;
+  force?: boolean;
+}
+
+export interface ReleaseTaskInput {
+  owner?: string;
+  force?: boolean;
+}
+
+export interface CompactTaskSummary {
+  id: string;
+  title: string;
+  area: Area;
+  project: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  due: string | null;
+  tags: string[];
+  claim: TaskFrontmatter["claim"];
+  source_links: string[];
+  path: string;
+  last_log: string | null;
+}
+
+export interface WorkspaceSummary {
+  data_dir: string;
+  total_tasks: number;
+  open_tasks: number;
+  by_status: Record<TaskStatus, number>;
+  by_area: Record<Area, number>;
+  due_soon: CompactTaskSummary[];
+  next_actions: CompactTaskSummary[];
 }
 
 function assertEnum<T extends readonly string[]>(values: T, value: string, field: string): asserts value is T[number] {
@@ -117,6 +170,7 @@ export async function createTask(dataDir: string, input: TaskInput): Promise<Tas
       enabled: input.reminder?.enabled ?? false,
       apple_id: input.reminder?.apple_id ?? null
     },
+    claim: null,
     source_links: input.source_links ?? [],
     created_at: now,
     updated_at: now,
@@ -157,6 +211,54 @@ export async function listTasks(dataDir: string, filters: TaskFilters = {}): Pro
   });
 }
 
+export async function searchTasks(dataDir: string, options: TaskSearchOptions = {}): Promise<CompactTaskSummary[]> {
+  const query = normalizeSearchText(options.query ?? "");
+  const tasks = await listTasks(dataDir, options);
+  const matches = query ? tasks.filter((task) => searchableText(task).includes(query)) : tasks;
+  return matches.slice(0, options.limit ?? 25).map(compactTaskSummary);
+}
+
+export async function getNextActions(dataDir: string, options: NextActionOptions = {}): Promise<CompactTaskSummary[]> {
+  const tasks = (await listTasks(dataDir))
+    .filter((task) => task.metadata.status !== "done")
+    .filter((task) => (options.area ? task.metadata.area === options.area : true))
+    .filter((task) => (options.project ? task.metadata.project === options.project : true))
+    .sort(compareNextActions);
+  return tasks.slice(0, options.limit ?? 10).map(compactTaskSummary);
+}
+
+export async function getWorkspaceSummary(
+  dataDir: string,
+  options: WorkspaceSummaryOptions = {}
+): Promise<WorkspaceSummary> {
+  const tasks = await listTasks(dataDir);
+  const byStatus = Object.fromEntries(TASK_STATUSES.map((status) => [status, 0])) as Record<TaskStatus, number>;
+  const byArea = Object.fromEntries(AREAS.map((area) => [area, 0])) as Record<Area, number>;
+  for (const task of tasks) {
+    byStatus[task.metadata.status] += 1;
+    byArea[task.metadata.area] += 1;
+  }
+
+  const today = options.today ?? new Date().toISOString().slice(0, 10);
+  const dueLimit = addDays(today, options.dueWithinDays ?? 7);
+  const dueSoon = tasks
+    .filter((task) => task.metadata.status !== "done")
+    .filter((task) => task.metadata.due !== null && task.metadata.due >= today && task.metadata.due <= dueLimit)
+    .sort(compareDueThenCreated)
+    .slice(0, options.limit ?? 10)
+    .map(compactTaskSummary);
+
+  return {
+    data_dir: dataDir,
+    total_tasks: tasks.length,
+    open_tasks: tasks.filter((task) => task.metadata.status !== "done").length,
+    by_status: byStatus,
+    by_area: byArea,
+    due_soon: dueSoon,
+    next_actions: await getNextActions(dataDir, { limit: options.limit ?? 10 })
+  };
+}
+
 export async function updateTask(dataDir: string, id: string, patch: Partial<TaskFrontmatter>, body?: string): Promise<TaskRecord> {
   const currentPath = await findTaskPath(dataDir, id);
   const current = await readTask(currentPath);
@@ -177,6 +279,7 @@ export async function moveTask(dataDir: string, id: string, status: TaskStatus):
   const nextMeta = TaskFrontmatterSchema.parse({
     ...current.metadata,
     status,
+    claim: status === "done" ? null : current.metadata.claim,
     archived_at: null,
     completed_at: status === "done" ? current.metadata.completed_at ?? nowIso() : current.metadata.completed_at,
     updated_at: nowIso()
@@ -231,6 +334,36 @@ export async function linkTaskSource(dataDir: string, id: string, sourceLink: st
   return updateTask(dataDir, id, { source_links: [...links] });
 }
 
+export async function claimTask(dataDir: string, id: string, input: TaskClaimInput): Promise<TaskRecord> {
+  const owner = input.owner.trim();
+  if (!owner) {
+    throw new CommandCenterError("Task claim owner is required", "VALIDATION_ERROR", { field: "owner" });
+  }
+  const task = await getTask(dataDir, id);
+  const current = task.metadata.claim;
+  if (current && current.owner !== owner && !input.force) {
+    throw new CommandCenterError(`Task already claimed by ${current.owner}`, "TASK_ALREADY_CLAIMED", {
+      id,
+      owner: current.owner
+    });
+  }
+  return updateTask(dataDir, id, {
+    claim: {
+      owner,
+      at: input.at?.trim() || nowIso()
+    }
+  });
+}
+
+export async function releaseTask(dataDir: string, id: string, input: ReleaseTaskInput = {}): Promise<TaskRecord> {
+  const task = await getTask(dataDir, id);
+  const current = task.metadata.claim;
+  if (current && input.owner && current.owner !== input.owner && !input.force) {
+    throw new CommandCenterError(`Task claimed by ${current.owner}`, "TASK_ALREADY_CLAIMED", { id, owner: current.owner });
+  }
+  return updateTask(dataDir, id, { claim: null });
+}
+
 export async function appendTaskLog(dataDir: string, id: string, input: TaskLogInput): Promise<TaskRecord> {
   const message = input.message.trim().replace(/\s+/g, " ");
   if (!message) {
@@ -255,4 +388,75 @@ function appendLogLine(body: string, line: string): string {
   const afterHeading = normalized.slice(headingEnd);
   const insertion = afterHeading.startsWith("\n\n") ? `\n${line}` : `\n\n${line}`;
   return `${normalized.slice(0, headingEnd)}${insertion}${afterHeading}\n`;
+}
+
+function compactTaskSummary(task: TaskRecord): CompactTaskSummary {
+  return {
+    id: task.metadata.id,
+    title: task.metadata.title,
+    area: task.metadata.area,
+    project: task.metadata.project,
+    status: task.metadata.status,
+    priority: task.metadata.priority,
+    due: task.metadata.due,
+    tags: task.metadata.tags,
+    claim: task.metadata.claim,
+    source_links: task.metadata.source_links,
+    path: task.path,
+    last_log: lastLogLine(task.body)
+  };
+}
+
+function searchableText(task: TaskRecord): string {
+  return normalizeSearchText(
+    [
+      task.metadata.title,
+      task.metadata.area,
+      task.metadata.project ?? "",
+      task.metadata.status,
+      task.metadata.priority,
+      task.metadata.tags.join(" "),
+      task.metadata.source_links.join(" "),
+      task.body
+    ].join(" ")
+  );
+}
+
+function normalizeSearchText(value: string): string {
+  return value.toLowerCase().normalize("NFKD");
+}
+
+function compareNextActions(a: TaskRecord, b: TaskRecord): number {
+  const rank = (status: TaskStatus) => {
+    if (status === "doing") return 0;
+    if (status === "next") return 1;
+    if (status === "waiting") return 2;
+    if (status === "inbox") return 3;
+    return 4;
+  };
+  return rank(a.metadata.status) - rank(b.metadata.status) || compareDueThenCreated(a, b);
+}
+
+function compareDueThenCreated(a: TaskRecord, b: TaskRecord): number {
+  const dueA = a.metadata.due ?? "9999-99-99";
+  const dueB = b.metadata.due ?? "9999-99-99";
+  return dueA.localeCompare(dueB) || a.metadata.created_at.localeCompare(b.metadata.created_at);
+}
+
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function lastLogLine(body: string): string | null {
+  const lines = body.split(/\r?\n/);
+  const logIndex = lines.findIndex((line) => line.trim() === "## Log");
+  if (logIndex === -1) return null;
+  for (const line of lines.slice(logIndex + 1)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("- ")) return trimmed;
+    if (trimmed.startsWith("## ")) return null;
+  }
+  return null;
 }

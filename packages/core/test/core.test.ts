@@ -4,17 +4,22 @@ import { describe, expect, it } from "vitest";
 import {
   appendTaskLog,
   archiveTask,
+  claimTask,
   completeTask,
   createProject,
   createTask,
   deleteTask,
+  getNextActions,
   getTask,
+  getWorkspaceSummary,
   initWorkspace,
   linkTaskSource,
   listProjects,
   listTasks,
   loadConfig,
   moveTask,
+  releaseTask,
+  searchTasks,
   taskPath,
   workspaceConfigPath,
   type TaskStatus
@@ -208,6 +213,85 @@ describe("tasks", () => {
       expect(first.body).toContain("## Log");
       expect(second.body.indexOf("Moved from idea")).toBeLessThan(second.body.indexOf("Created initial task"));
       expect(second.body).toContain("- 2026-05-17T11:00:00.000Z - Mateo: Moved from idea to next action");
+    });
+  });
+
+  it("searchTasks returns compact matches without task bodies", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace({ dataDir: dir, writeGlobal: false });
+      await createTask(dir, {
+        title: "Communication memo",
+        area: "learning",
+        status: "next",
+        tags: ["systems"],
+        body: "## Objective\n\nExplain a complex workflow.\n"
+      });
+      await createTask(dir, { title: "Admin cleanup", area: "admin", status: "inbox" });
+
+      const matches = await searchTasks(dir, { query: "complex workflow" });
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toMatchObject({ title: "Communication memo", status: "next", area: "learning" });
+      expect(matches[0]).not.toHaveProperty("body");
+    });
+  });
+
+  it("getNextActions returns compact open tasks ordered by active lanes and due date", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace({ dataDir: dir, writeGlobal: false });
+      await createTask(dir, { title: "Later next", status: "next", due: "2026-06-01" });
+      await createTask(dir, { title: "Current work", status: "doing", due: "2026-06-15" });
+      await createTask(dir, { title: "Already done", status: "done", due: "2026-05-01" });
+
+      const actions = await getNextActions(dir);
+      expect(actions.map((task) => task.title)).toEqual(["Current work", "Later next"]);
+      expect(actions[0]).not.toHaveProperty("body");
+    });
+  });
+
+  it("getWorkspaceSummary returns compact counts and due items", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace({ dataDir: dir, writeGlobal: false });
+      await createTask(dir, { title: "Due soon", area: "learning", status: "next", due: "2026-05-20" });
+      await createTask(dir, { title: "Work item", area: "work", status: "doing" });
+      await createTask(dir, { title: "Done item", area: "work", status: "done" });
+
+      const summary = await getWorkspaceSummary(dir, { today: "2026-05-17", dueWithinDays: 7 });
+      expect(summary.total_tasks).toBe(3);
+      expect(summary.open_tasks).toBe(2);
+      expect(summary.by_status).toMatchObject({ next: 1, doing: 1, done: 1 });
+      expect(summary.by_area).toMatchObject({ learning: 1, work: 2 });
+      expect(summary.due_soon.map((task) => task.title)).toEqual(["Due soon"]);
+    });
+  });
+
+  it("claimTask and releaseTask coordinate agent ownership", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace({ dataDir: dir, writeGlobal: false });
+      const task = await createTask(dir, { title: "Claim me", status: "next" });
+
+      const claimed = await claimTask(dir, task.metadata.id, { owner: "Codex", at: "2026-05-17T10:00:00.000Z" });
+      expect(claimed.metadata.claim).toEqual({ owner: "Codex", at: "2026-05-17T10:00:00.000Z" });
+
+      await expect(claimTask(dir, task.metadata.id, { owner: "Claude" })).rejects.toMatchObject({
+        code: "TASK_ALREADY_CLAIMED"
+      });
+
+      const forced = await claimTask(dir, task.metadata.id, { owner: "Claude", force: true });
+      expect(forced.metadata.claim?.owner).toBe("Claude");
+
+      const released = await releaseTask(dir, task.metadata.id);
+      expect(released.metadata.claim).toBeNull();
+    });
+  });
+
+  it("completeTask releases active task claims", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace({ dataDir: dir, writeGlobal: false });
+      const task = await createTask(dir, { title: "Complete claimed", status: "doing" });
+      await claimTask(dir, task.metadata.id, { owner: "Codex" });
+      const completed = await completeTask(dir, task.metadata.id);
+      expect(completed.metadata.status).toBe("done");
+      expect(completed.metadata.claim).toBeNull();
     });
   });
 

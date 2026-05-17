@@ -55,6 +55,7 @@ tags:
 reminder:
   enabled: true
   apple_id: null
+claim: null
 source_links:
   - /path/to/source.md
 created_at: 2026-05-17T09:00:00.000Z
@@ -67,6 +68,18 @@ archived_at: null
 
 Do the thing.
 ```
+
+`claim` is optional and backward-compatible. Older task files without this field parse as `claim: null`.
+
+When a task is claimed by an agent or session, it looks like this:
+
+```yaml
+claim:
+  owner: Codex
+  at: 2026-05-17T09:30:00.000Z
+```
+
+Claims are lightweight coordination metadata. They help multiple agents or parallel sessions avoid ambiguous ownership, but they are not a distributed lock. Completing a task clears the claim automatically.
 
 ## Project File
 

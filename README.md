@@ -27,6 +27,8 @@ Implemented:
 - Core task and project operations.
 - CLI for local automation.
 - MCP server for Codex, Claude, and other agents.
+- Compact agent discovery: task search, workspace summary, and next-action queries.
+- Lightweight task claiming/releasing for parallel agent sessions.
 - Apple Reminders dry-run and real macOS sync.
 - Tauri desktop dashboard with Kanban lanes, card descriptions, task logs, source links, collapsible lanes, focused lane view, and `Done` collapsed by default.
 
@@ -94,6 +96,20 @@ The global config is stored at:
 
 Existing older local installs that used `~/.agent-command-center/config.yaml` are still read as a fallback.
 
+To also print Codex MCP setup instructions:
+
+```bash
+action-ledger init --data-dir "$HOME/Documents/Action Ledger" --mcp codex
+```
+
+To install the MCP server block into Codex config automatically:
+
+```bash
+action-ledger init --data-dir "$HOME/Documents/Action Ledger" --mcp codex --install-mcp
+```
+
+This writes only the `action-ledger` MCP server block under `$CODEX_HOME/config.toml` or `~/.codex/config.toml`. Restart Codex after installing.
+
 ## CLI Usage
 
 If you ran `npm link`:
@@ -101,7 +117,12 @@ If you ran `npm link`:
 ```bash
 action-ledger task add "Write system memo" --area learning --status next --due 2026-05-24
 action-ledger task list --status next --due-before 2026-05-31
+action-ledger task search "system memo" --area learning
+action-ledger summary --json
+action-ledger next --area learning
 action-ledger task log <task_id> "Captured the implementation decision" --author Codex
+action-ledger task claim <task_id> --owner Codex
+action-ledger task release <task_id>
 action-ledger task move <task_id> doing
 action-ledger task complete <task_id>
 action-ledger reminders sync --json
@@ -128,6 +149,12 @@ npm run mcp
 ```
 
 ### Codex MCP Setup
+
+Fast path:
+
+```bash
+action-ledger init --data-dir "$HOME/Documents/Action Ledger" --mcp codex --install-mcp
+```
 
 Recommended setup with Codex CLI:
 
@@ -182,6 +209,9 @@ Main MCP tools:
 - `get_workspace_status`
 - `create_task`
 - `list_tasks`
+- `search_tasks`
+- `get_workspace_summary`
+- `get_next_actions`
 - `get_task`
 - `move_task`
 - `complete_task`
@@ -192,9 +222,13 @@ Main MCP tools:
 - `get_project`
 - `link_source`
 - `append_task_log`
+- `claim_task`
+- `release_task`
 - `sync_reminders`
 
-The most important agent behavior is to use `append_task_log` as work evolves. That turns a task from a static todo into an auditable action record.
+Agent-facing compact tools should be the first read path. Use `get_workspace_summary`, `get_next_actions`, or `search_tasks` to orient with low context, then call `get_task` only when the full Markdown body is needed.
+
+The most important write behavior is to use `append_task_log` as work evolves. That turns a task from a static todo into an auditable action record. `claim_task` and `release_task` are lightweight coordination hints for agents or parallel sessions; they are not a distributed lock system.
 
 The MCP server also ships with agent instructions: agents should suggest tasks for substantial study/research outputs, curated lists, or plans worth revisiting, but should not create tasks automatically unless the user explicitly asks to create, register, track, remind, or schedule them.
 
@@ -260,6 +294,9 @@ tags:
 reminder:
   enabled: true
   apple_id: null
+claim:
+  owner: Codex
+  at: 2026-05-17T09:30:00.000Z
 source_links:
   - /path/to/source.md
 created_at: 2026-05-17T09:00:00.000Z

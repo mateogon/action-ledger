@@ -18,6 +18,9 @@ Use `append_task_log` to record meaningful progress, decisions, feedback, or cha
 - `get_workspace_status`
 - `create_task`
 - `list_tasks`
+- `search_tasks`
+- `get_workspace_summary`
+- `get_next_actions`
 - `get_task`
 - `move_task`
 - `complete_task`
@@ -28,9 +31,18 @@ Use `append_task_log` to record meaningful progress, decisions, feedback, or cha
 - `get_project`
 - `link_source`
 - `append_task_log`
+- `claim_task`
+- `release_task`
 - `sync_reminders`
 
 `list_tasks` accepts `status`, `area`, `project`, and `due_before` filters. `due_before` returns only tasks with a due date on or before the given `YYYY-MM-DD` value.
+
+Prefer compact discovery tools before reading full task bodies:
+
+- `get_workspace_summary` returns counts, due-soon items, and next actions.
+- `get_next_actions` returns compact open tasks ordered for attention.
+- `search_tasks` searches title, tags, source links, and body text, but returns compact task records without `body`.
+- `get_task` returns the full Markdown body and should be used only when details are needed.
 
 ## Resources
 
@@ -61,6 +73,25 @@ create_task({
 sync_reminders({ dry_run: true })
 ```
 
+## Compact Discovery
+
+```json
+{
+  "query": "communication memo",
+  "area": "learning",
+  "limit": 5
+}
+```
+
+Use this shape with `search_tasks` when a user asks about a topic, source, or remembered phrase. The response includes `id`, `title`, `area`, `project`, `status`, `priority`, `due`, `tags`, `claim`, `source_links`, `path`, and `last_log`.
+
+For a low-context orientation pass, use:
+
+```text
+get_workspace_summary({ limit: 10 })
+get_next_actions({ area: "learning", limit: 5 })
+```
+
 ## Destructive Operations
 
 `delete_task` requires:
@@ -86,3 +117,16 @@ Example:
 ```
 
 The entry is written under `## Log` in the task body. Newest entries are inserted first.
+
+## Task Claims
+
+Use `claim_task` when an agent starts active work on a task:
+
+```json
+{
+  "id": "task_123",
+  "owner": "Codex"
+}
+```
+
+If another owner already claimed the task, `claim_task` fails with `TASK_ALREADY_CLAIMED` unless `force` is true. Use `release_task` when the work is complete, paused, or handed off. Completing a task also clears the claim.
